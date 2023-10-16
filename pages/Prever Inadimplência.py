@@ -66,7 +66,7 @@ def separar_dados(df):
 @st.cache_resource
 def gerar_score(df):
     # Carregando o modelo
-    url = 'https://github.com/Caiodrp/Prever-Inadimplencia-St/raw/main/reg_logi.pkl'
+    url = 'https://github.com/Caiodrp/Prever-Inadimplencia-ST/raw/main/reg_logi.pkl'
     r = requests.get(url)
     with open('reg_logi.pkl', 'wb') as f:
         f.write(r.content)

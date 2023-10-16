@@ -4,6 +4,8 @@ import streamlit as st
 import base64
 import requests
 
+from io import BytesIO
+
 # Definir o template
 st.set_page_config(page_title='Instruções',
                 page_icon='💲',
@@ -23,34 +25,26 @@ st.write("---")
 # Adicionando texto antes do vídeo
 st.write("Este é um tutorial em vídeo sobre como usar a aplicação")
 
-# Adicionando vídeo
-st.write()
-st.write(
-    '<div style="display:flex; align-items:center; justify-content:center;">'
-    '<iframe width="560" height="315" src="https://www.youtube.com/embed/dQw4w9WgXcQ?start=40" frameborder="0" allow="autoplay; encrypted-media" allowfullscreen></iframe>'
-    '</div>',
-    unsafe_allow_html=True
-)
-# Arquivo csv modelo 
-st.write('# Modelos dos arquivos CSV')
-st.write('Os arquivos a serem usados devem ser com o nome e ordem das colunas identicos a do modelo')
-url = "https://github.com/seu_usuario/seu_repositorio/raw/main/arquivo.xlsx"
+# URL do seu vídeo do GitHub
+video_url = "https://github.com/Caiodrp/Prever-Inadimplencia-ST/blob/1417e8473c07a42ebcc76f207a3efb2865b72761/Tutorial.webm?raw=true"
 
-# Função para baixar o arquivo
-def download_file(url):
-    response = requests.get(url)
-    b64 = base64.b64encode(response.content).decode()
-    return f'<a href="data:application/octet-stream;base64,{b64}" download="arquivo.xlsx">Baixar arquivo</a>'
+# Exibindo o vídeo na página do Streamlit
+st.video(video_url)
 
-# Adicionando botão para download
-st.markdown(download_file(url), unsafe_allow_html=True)
+@st.cache_data()
+def get_data(url):
+    return BytesIO(requests.get(url).content)
+
+url = 'https://github.com/Caiodrp/Prever-Inadimplencia-ST/blob/main/csv/credit_scoring.csv'
+data = get_data(url)
+st.download_button(label='Download CSV', data=data, file_name='credit_scoring.csv', mime='text/csv')
 
 # Adicionando texto
 st.write(
     """
-    # Análise
+    # Análises
 
-    Na página "Análise", você pode carregar e visualizar diferentes informações sobre o conjunto de dados "online_shoppers_intention", que são o comportamento de diversos acessos de usuários em diferentes tipos de sites, disponível em https://archive.ics.uci.edu/dataset/468/online+shoppers+purchasing+intention+dataset.
+    Na página Análises, se encontram as principais características da base de dados, tais como informações estatísticas e de realção com a variável reposta 
 
     ### Info
 

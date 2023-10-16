@@ -370,7 +370,7 @@ def main():
             st.header("Dicionário de dados:")
 
             # Mostrar imagem
-            st.image("https://raw.githubusercontent.com/Caiodrp/Prever-Inadimplencia-St/main/dic_dados.png")
+            st.image("https://raw.githubusercontent.com/Caiodrp/Prever-Inadimplencia-ST/main/img/dic_dados.png")
 
             # Mostrar cabeçalho do DataFrame
             st.dataframe(df.head())

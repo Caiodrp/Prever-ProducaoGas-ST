@@ -53,7 +53,7 @@ def main():
         '<h3 style="text-align:left;">Autor</h3>'
         '<ul style="list-style-type: disc; margin-left: 20px;">'
         '<li>Caio Douglas Rodrigues de Paula</li>'
-        '<li><a href="https://github.com/Caiodrp/Prever-Inadimplencia-St">GitHub</a></li>'
+        '<li><a href="https://github.com/Caiodrp/Prever-Inadimplencia-ST">GitHub</a></li>'
         '</ul>',
         unsafe_allow_html=True
     )
