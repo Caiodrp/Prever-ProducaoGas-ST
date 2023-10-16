@@ -1,6 +1,6 @@
 chardet==4.0.0
 matplotlib==3.5.3
-numpy==1.23.5
+numpy==1.21.6
 pandas==1.21.6
 plotly==5.15.0
 pycaret==3.0.4
