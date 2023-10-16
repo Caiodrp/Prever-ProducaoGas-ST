@@ -6,6 +6,6 @@ plotly==5.15.0
 pycaret==3.0.4
 Requests==2.31.0
 scipy==1.7.3
-seaborn==0.13.0
+seaborn==0.12.2
 streamlit==1.27.2
 ydata_profiling==4.5.1
