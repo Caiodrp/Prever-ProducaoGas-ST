@@ -14,11 +14,8 @@ https://github.com/Caiodrp/Prever-Inadimplencia-ST/assets/99834159/1c979891-8f91
 
 
 # Modelos dos arquivos CSV
-## Arquivo CSV clusterização
-[Download Arquivo Online purchased](https://raw.githubusercontent.com/Caiodrp/Clusterizacao-Streamlit/main/CSV/online_shoppers_intention.csv)
-
-## Arquivo CSV RFV
-[Download Arquivo RFV](https://raw.githubusercontent.com/Caiodrp/Clusterizacao-Streamlit/main/CSV/exemplo_RFV.csv)
+## Arquivo CSV utilizado para treino do modelo
+[Arquivo CSV base de dados](https://raw.githubusercontent.com/Caiodrp/Clusterizacao-Streamlit/main/CSV/online_shoppers_intention.csv)
 
 # Análise Clusterização
 
