@@ -43,4 +43,4 @@ Para fazer previsões para novos dados, você precisa preencher os campos na bar
 
 ## Relatório Gerencial
 
-A subseção "Relatório Gerencial" contém relatórios estatísticos levando em conta o problema de negócio.
+A subseção "Relatório Gerencial" contém relatórios estatísticos levando em conta o problema de negócio
