@@ -1,8 +1,8 @@
 # CREDIT SCORING
 
-## Web aplicação que automatiza análises sobre dados de clientes que tomaram crédito, e faz previsão de novos dados usando a Regressão Logística para prever se novos clientes se tornarão inadimplentes ou não.
+### Web aplicação que automatiza análises sobre dados de clientes que tomaram crédito, e faz previsão de novos dados usando a Regressão Logística para prever se novos clientes se tornarão inadimplentes ou não.
 
-# Este é um tutorial em vídeo sobre como usar a aplicação
+## Este é um tutorial em vídeo sobre como usar a aplicação
 
 
 
