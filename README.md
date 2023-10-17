@@ -6,7 +6,10 @@
 
 
 
-https://github.com/Caiodrp/Clusterizacao-Streamlit/assets/99834159/bf830267-6415-4ba6-bf8c-7d7c250a18b4
+
+https://github.com/Caiodrp/Prever-Inadimplencia-ST/assets/99834159/1c979891-8f91-4a2e-9cef-1ba4ef91fcbf
+
+
 
 
 
