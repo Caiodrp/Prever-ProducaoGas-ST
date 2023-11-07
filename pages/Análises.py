@@ -9,8 +9,18 @@ import base64
 import plotly.graph_objects as go
 import chardet
 
+from scipy import stats
+from sklearn.ensemble import IsolationForest
+from scipy.stats import kruskal
 from ydata_profiling import ProfileReport
 from scipy.stats import t
+from statsmodels.api import add_constant
+from statsmodels.stats.outliers_influence import variance_inflation_factor
+
+# Definir o template
+st.set_page_config(page_title='Análises',
+                    page_icon='🏭',
+                    layout='wide')
 
 @st.cache_data
 def carregar_dados(uploaded_file):
@@ -30,319 +40,340 @@ def carregar_dados(uploaded_file):
     st.warning("Por favor, faça upload de um arquivo .CSV")
     return None
 
-@st.cache_data
-def calcula_iv(df):
-    """
-    Calcula o IV (Information Value) com suavização para variáveis categóricas e contínuas.
-    
-    Parâmetros:
-        df (DataFrame): DataFrame original com os dados.
-    
-    Retorna:
-        metadados (DataFrame): DataFrame atualizado com os valores de IV calculados.
-    """
-    
-    # Função para calcular o IV suavizado
-    def IV(variavel, resposta):
-        # Cria uma tabela de contingência entre a variável e a resposta
-        tab = pd.crosstab(variavel, resposta, margins=True, margins_name='total')
+def calcula_teste_h_agrupa_mediana(df, resposta='Gás Natural (Mm³/dia)', variavel='Operador', condicao=0.2):
+    var_exp = variavel + '_Agrupado'
+    # Cria um dicionário para armazenar os resultados
+    resultados = {}
 
-        # Obtém os rótulos das colunas de evento e não evento
-        rotulo_evento = tab.columns[0]
-        rotulo_nao_evento = tab.columns[1]
+    # Loop através de cada categoria na variável
+    for categoria in df[variavel].unique():
+        # Cria uma nova coluna binária para a categoria
+        df_temp = df.copy()
+        df_temp[categoria] = np.where(df_temp[variavel] == categoria, 1, 0)
 
-        # Rótulos
-        event = tab[rotulo_evento]
-        non_event = tab[rotulo_nao_evento] 
-        
-        # Calcula as proporções de evento e não evento
-        tab['pct_evento'] = event / tab.loc['total', rotulo_evento]
-        tab['pct_nao_evento'] = non_event / tab.loc['total', rotulo_nao_evento]
+        # Seleciona os valores da variável resposta para esta categoria e para o resto
+        grupo_categoria = df_temp[df_temp[categoria] == 1][resposta]
+        grupo_resto = df_temp[df_temp[categoria] == 0][resposta]
 
-        # Calcula o WoE (Weight of Evidence) e o IV parcial
-        tab['woe'] = np.log(tab.pct_evento / tab.pct_nao_evento)
-        tab['iv_parcial'] = (tab.pct_evento - tab.pct_nao_evento) * tab.woe
+        # Realiza o Teste H de Kruskal-Wallis
+        h, p = kruskal(grupo_categoria, grupo_resto)
 
-        # Retorna o IV parcial totalizado
-        return tab['iv_parcial'].sum()
+        # Calcula a mediana da variável resposta para esta categoria
+        mediana = "{:.5f}".format(grupo_categoria.median())
 
-    # metadados para análise das variáveis
-    metadados = pd.DataFrame(df.dtypes, columns=['dtype'])
+        # Adiciona os resultados ao dicionário
+        resultados[categoria] = (h, p, mediana)
 
-    # Valores missing
-    metadados['nmissing'] = df.isna().sum()
+    # Cria um DataFrame com as categorias agrupadas
+    df_resultados = pd.DataFrame(resultados, index=['H', 'p-value', 'Mediana']).transpose()
 
-    # Categorias
-    metadados['valores_unicos'] = df.nunique()
+    # Inicializa o DataFrame para armazenar os agrupamentos
+    df_agrupamentos = pd.DataFrame(columns=['H', 'p-value', 'Mediana'])
+    grupo_atual = []
+    valor_Mediana_anterior = float(df_resultados.iloc[0]['Mediana'])
 
-    # Adicionando a coluna 'papel' ao DataFrame 'metadados' e inicializando com o valor 'covariavel'
-    metadados['papel'] = 'covariavel'
+    # Loop através de todas as linhas do DataFrame
+    for indice, linha in df_resultados.iterrows():
+        # Converte a 'Mediana' de volta para float
+        mediana_atual = float(linha['Mediana'])
 
-    # Alterando o valor da coluna 'papel' para 'resposta' na linha correspondente à coluna 'mau'
-    metadados.loc['mau', 'papel'] = 'resposta'
-
-    # Transformar a variável resposta em inteiro
-    df['mau'] = df.mau.astype('int64')
-
-    # Iterar sobre todas as variáveis categóricas e contínuas
-    for var in metadados[metadados.papel == 'covariavel'].index:
-        if metadados.loc[var, 'dtype'] in ['int', 'float']:
-            # Se a variável for contínua, aplicar qcut se tiver mais de 5 categorias únicas
-            if metadados.loc[var, 'valores_unicos'] > 5:
-                variavel = pd.qcut(df[var], 5, duplicates='drop')
-            else:
-                variavel = df[var]
-            iv = IV(variavel, df['mau'])
+        # Verifica se a diferença entre os valores atuais e anteriores de 'Mediana' é menor ou igual a condição
+        if abs(mediana_atual - valor_Mediana_anterior) <= condicao:
+            # Adiciona o índice ao grupo atual
+            grupo_atual.append(indice)
         else:
-            # Se a variável for categórica, calcular o IV diretamente
-            iv = IV(df[var], df['mau'])
-        metadados.loc[var, 'IV'] = iv
+            # Adiciona o grupo atual ao DataFrame de agrupamentos
+            chave = '_'.join(map(str, grupo_atual))
+            df_agrupamentos.loc[chave] = [df_resultados.loc[grupo_atual[0], 'H'], df_resultados.loc[grupo_atual[0], 'p-value'], valor_Mediana_anterior]
+
+            # Inicia um novo grupo com o índice atual
+            grupo_atual = [indice]
+
+        # Atualiza o valor anterior de 'Mediana'
+        valor_Mediana_anterior = mediana_atual
+
+    # Adiciona o último grupo ao DataFrame de agrupamentos
+    chave = '_'.join(map(str, grupo_atual))
+    df_agrupamentos.loc[chave] = [df_resultados.loc[grupo_atual[0], 'H'], df_resultados.loc[grupo_atual[0], 'p-value'], valor_Mediana_anterior]
+
+    # Cria um dicionário para mapear as categorias originais para as novas categorias agrupadas
+    mapeamento = {indice: chave for chave in df_agrupamentos.index for indice in chave.split('_')}
+
+    # Cria uma nova coluna no DataFrame original que mapeia a coluna var_exp para as novas categorias agrupadas
+    df[var_exp] = df[variavel].map(mapeamento)
+
+    return df
+
+def remove_outliers(df):
+    # Crie o modelo Isolation Forest
+    clf = IsolationForest(contamination= 0.2, random_state=42)
     
-    return metadados
+    # vars de interesse
+    vars_conti = ['Tempo de Produção (hs por mês)', 'Petróleo (bbl/dia)', 'Gás Natural (Mm³/dia)',
+              'Água (bbl/dia)', 'Grau API']
+    
+    # Selecione apenas as colunas numéricas do DataFrame
+    df_numeric = df[vars_conti]
+    
+    # Ajuste o modelo aos seus dados
+    clf.fit(df_numeric)
+    
+    # Use o modelo para prever outliers
+    outlier_predictions = clf.predict(df_numeric)
+    
+    # Remova os outliers do DataFrame
+    df_no_outliers = df[outlier_predictions == 1]
+    
+    return df_no_outliers
 
-@st.cache_data
-def plot_cont_bivariate(df, column, q):
-    # Criar uma cópia do dataframe
-    df_copy = df.copy()
+def categoriza_grau_api(grau_api):
+    if grau_api > 45:
+        return 'Leve_Particular'
+    elif 33 <= grau_api <= 45:
+        return 'Leve'
+    elif 22 <= grau_api < 33:
+        return 'Medio'
+    elif 10 <= grau_api < 22:
+        return 'Pesado'
+    else:
+        return 'Extra_Pesado'
 
-    # Criar bins usando qcut
-    df_copy['bins'] = pd.qcut(df_copy[column], q=q, duplicates='drop')
+def transformacao_dados(df):
+    # Cria um mapa dos valores de 'Nome Poço ANP' para 'Corrente' e 'Grau API'
+    mapa_corrente = df.dropna(subset=['Corrente']).set_index('Nome Poço ANP')['Corrente'].to_dict()
+    mapa_grau_api = df.dropna(subset=['Grau API']).set_index('Nome Poço ANP')['Grau API'].to_dict()
 
-    # Contar a frequência de cada bin para os valores True e False da variável 'mau'
-    count_true = df_copy[df_copy['mau'] == True]['bins'].value_counts().sort_index()
-    count_false = df_copy[df_copy['mau'] == False]['bins'].value_counts().sort_index()
+    # Preencha os valores faltantes nas colunas 'Corrente' e 'Grau API' com os valores correspondentes do mapa
+    df['Corrente'] = df['Corrente'].fillna(df['Nome Poço ANP'].map(mapa_corrente))
+    df['Grau API'] = df['Grau API'].fillna(df['Nome Poço ANP'].map(mapa_grau_api))
 
-    # Calcular a distribuição total e a proporção por True
-    total = count_true + count_false
-    proportion_true = count_true / total
+    # Exclua as linhas que ainda têm valores NaN
+    df = df.dropna()
 
-    # Criar um DataFrame para o gráfico
-    data = {
-        'Bin': count_false.index.astype(str),
-        'Distribuição': count_false.values,
-        'Proporção mau': proportion_true.values
+    # Retirando colunas que não tem haver com a produção, redundantes ou não significativas.
+    cols_to_drop = ['Nome Poço Operador','Nome Poço ANP','Número do Contrato', 'Período','Condensado (bbl/dia)',
+                    'Gás Natural (Mm³/dia) N Assoc', 'Gás Natural (Mm³/dia) Total', 'Volume Gás Royalties (m³/mês)',
+                    'Instalação Destino', 'Tipo Instalação', 'Período da Carga','Óleo (bbl/dia)','Campo']
+    df = df.drop(columns=cols_to_drop)
+
+    df = df[~((df[['Tempo de Produção (hs por mês)', 'Petróleo (bbl/dia)', 'Água (bbl/dia)']] < 1).any(axis=1) |
+               (df['Gás Natural (Mm³/dia)'] <= 0))]
+
+    # Corrigindo nome dos estados
+    df['Estado'] = df['Estado'].replace({
+        'EspÃ­rito Santo': 'Espírito Santo',
+        'CearÃ¡': 'Ceará',
+        'SÃ£o Paulo': 'São Paulo',
+        'MaranhÃ£o': 'Maranhão'
+    })
+
+    # Unir Estado e Bacia
+    df['Estados_Bacias'] = df['Estado'] + "_" + df['Bacia']
+
+    correcoes_operador = {
+        '3R Fazenda BelÃ©m': '3R Fazenda Belém',
+        'Seacrest SPE CricarÃ©': 'Seacrest SPE Cricaré',
+        'NÃ­on Energia': 'Níon Energia',
+        'Nova PetrÃ³leo': 'Nova Petróleo',
+        'RecÃ´ncavo E&P': 'Recôncavo E&P',
+        'Phoenix Ãleo & GÃ¡s': 'Phoenix Óleo & Gás',
+        'Petro Rio O&G': 'Petro Rio O&G',
+        'SPE TiÃªta': 'SPE Tiêta',
+        'PetroRecÃ´ncavo': 'PetroRecôncavo'
     }
-    df_plot = pd.DataFrame(data)
 
-    # Criar o gráfico de barras empilhadas usando Plotly Express
-    fig = px.bar(df_plot, x='Bin', y=['Distribuição', 'Proporção mau'],
-                title='Histograma de ' + column, labels={'value': 'Frequência'},
-                height=600, color_discrete_sequence=['blue', 'red'])
+    # Use o método replace para corrigir os nomes das empresas
+    df['Operador'] = df['Operador'].replace(correcoes_operador)
 
-    # Mostrar o gráfico no Streamlit
-    st.plotly_chart(fig)
+    # Removendo categorias com pouca representatividade
+    df = df[~df['Operador'].isin(df['Operador'].value_counts()[df['Operador'].value_counts() < 10].index)]
 
-@st.cache_data
-def plot_cat_bivariate(df, column):
-    # Arredondar a coluna se os valores forem numéricos
-    if np.issubdtype(df[column].dtype, np.number):
-        df[column] = df[column].round()
+    correcoes_corrente = {
+        'EspÃ­rito Santo': 'Espírito Santo',
+        'Fazenda BelÃ©m': 'Fazenda Belém',
+        'Ãrea de Sul de Tupi': 'Área de Sul de Tupi',
+        'SapinhoÃ¡': 'Sapinhoá',
+        'SabiÃ¡ Bico de Osso': 'Sabiá Bico de Osso',
+        'Fazenda Santo EstevÃ£o': 'Fazenda Santo Estevão',
+        'SabiÃ¡ da Mata': 'Sabiá da Mata'
+    }
 
-    # Contar a frequência de cada categoria para os valores True e False da variável 'mau'
-    count_true = df[df['mau'] == True][column].value_counts().sort_index()
-    count_false = df[df['mau'] == False][column].value_counts().sort_index()
+    # Use o método replace para corrigir os nomes das correntes
+    df['Corrente'] = df['Corrente'].replace(correcoes_corrente)
 
-    # Garantir que ambos os índices tenham o mesmo conjunto de valores
-    index = count_true.index.union(count_false.index)
-    count_true = count_true.reindex(index, fill_value=0)
-    count_false = count_false.reindex(index, fill_value=0)
+    # Removendo categorias com pouca representatividade
+    df = df[~df['Corrente'].isin(df['Corrente'].value_counts()[df['Corrente'].value_counts() < 10].index)]
 
-    # Calcular a distribuição total e a proporção por True
-    total = count_true + count_false
-    proportion_true = count_true / total
+    # Agrupando variáveis categóricas
+    df = calcula_teste_h_agrupa_mediana(df)
 
-    # Criar o gráfico de barras empilhadas
-    fig = go.Figure(data=[
-        go.Bar(name='Distribuição', x=total.index.astype(str), y=total.values, marker_color='blue'),
-        go.Bar(name='Proporção mau', x=proportion_true.index.astype(str), y=proportion_true.values, marker_color='red')
-    ])
+    df = remove_outliers(df)
 
-    # Alterar o layout do gráfico
-    fig.update_layout(
-        barmode='stack',
-        title_text='Histograma de ' + column,
-        xaxis_title=column,
-        yaxis_title='Frequência',
-        autosize=False,
-        width=1000,
-        height=600,
-    )
+    # Lista de colunas para transformar
+    cols_to_transform = ['Petróleo (bbl/dia)', 'Água (bbl/dia)', 'Tempo de Produção (hs por mês)', 'Gás Natural (Mm³/dia)']
 
-    # Mostrar o gráfico no Streamlit
-    st.plotly_chart(fig)
+    # Crie novas colunas com o sufixo '_log' para as transformações
+    for col in cols_to_transform:
+        df[col + '_log'] = np.log(df[col])
+
+    # Crie uma nova coluna com o sufixo '_sqrt' para a transformação de raiz quadrada
+    df['Água (bbl/dia)_sqrt'] = np.sqrt(df['Água (bbl/dia)'])
+    df['Tempo de Produção (hs por mês)_sqrt'] = np.sqrt(df['Tempo de Produção (hs por mês)'])
+
+    # Funçãoq ue categoriza o API
+    df['Grau_API_Cat'] = df['Grau API'].apply(categoriza_grau_api)
+
+    return df
 
 @st.cache_data
-def woe_discreta(var, df):
-    
-    """
-    Calcula o Weight of Evidence (WOE) e outras métricas para uma variável categórica em relação à variável resposta.
+def describe_continuous(df):
+    # Alterar a formatação global de exibição de float
+    pd.options.display.float_format = '{:.2f}'.format
 
-    Parâmetros:
-    - var: Nome da variável categórica no DataFrame 'df' para análise.
-    - df: DataFrame pandas contendo as variáveis de interesse, incluindo a variável resposta 'mau'.
+    # Selecionar variáveis contínuas
+    continuous_vars = df.select_dtypes(include=['int64','int32','float64'])
 
-    Retorna:
-    - biv: DataFrame contendo as métricas calculadas, incluindo WOE, limites de confiança e mais.
-    
-    Esta função calcula o Weight of Evidence (WOE) para uma variável categórica em relação à variável resposta 'mau' em um DataFrame 'df'. Ela também calcula outras métricas estatísticas, como proporção de 'mau', erros padrão, logit, limites de confiança e mais. Além disso, gera um gráfico mostrando o WOE para cada categoria da variável categórica.
+    # Obter estatísticas descritivas
+    desc = continuous_vars.describe()
 
-    """
-    
-    # Cria uma nova coluna 'bom' no DataFrame 'df' que é igual a 1 menos o valor da coluna 'mau'
-    df['bom'] = 1-df.mau
-    
-    # Agrupa o DataFrame 'df' pela variável categórica 'var'
-    g = df.groupby(var)
+    # Adicionar uma linha para a quantidade de valores únicos
+    unique_counts = pd.DataFrame(continuous_vars.nunique(), columns=['unique']).transpose()
+    desc = pd.concat([desc, unique_counts])
 
-    # Cria um novo DataFrame 'biv' que contém informações sobre a relação entre a variável categórica e a variável resposta
-    biv = pd.DataFrame({'qt_bom': g['bom'].sum(),  # Soma dos valores "bom" para cada categoria
-                        'qt_mau': g['mau'].sum(),  # Soma dos valores "mau" para cada categoria
-                        'mau':g['mau'].mean(),  # Proporção de valores "mau" para cada categoria
-                        var: g['mau'].mean().index,  # Nome das categorias
-                        'cont':g[var].count()})  # Contagem de valores para cada categoria
-    
-    # Calcula o erro padrão da proporção de valores "mau" para cada categoria
-    biv['ep'] = (biv.mau*(1-biv.mau)/biv.cont)**.5
-    
-    # Calcula os limites de confiança utilizando a distribuição t-Student para a proporção de valores "mau" para cada categoria
-    biv['mau_sup'] = biv.mau+t.ppf([0.975], biv.cont-1)*biv.ep
-    biv['mau_inf'] = biv.mau+t.ppf([0.025], biv.cont-1)*biv.ep
-    
-    # Calcula o logit da proporção de valores "mau" para cada categoria
-    biv['logit'] = np.log(biv.mau/(1-biv.mau))
-    
-    # Calcula os limites de confiança para o logit da proporção de valores "mau" para cada categoria
-    biv['logit_sup'] = np.log(biv.mau_sup/(1-biv.mau_sup))
-    biv['logit_inf'] = np.log(biv.mau_inf/(1-biv.mau_inf))
+    return desc
 
-    # Calcula o Weight of Evidence (WOE) geral
-    tx_mau_geral = df.mau.mean()
-    woe_geral = np.log(df.mau.mean() / (1 - df.mau.mean()))
+@st.cache_data
+def describe_categorical(df):
+    categorical_vars = df.select_dtypes(include=['object', 'bool'])
+    return categorical_vars.describe()
 
-    # Calcula o Weight of Evidence (WOE) para cada categoria da variável categórica
-    biv['woe'] = biv.logit - woe_geral
-    
-    # Calcula os limites de confiança para o Weight of Evidence (WOE) para cada categoria da variável categórica
-    biv['woe_sup'] = biv.logit_sup - woe_geral
-    biv['woe_inf'] = biv.logit_inf - woe_geral
+@st.cache_data
+def plot_cont_bivariate(df, vars_cont):
+    # Se nenhuma variável foi selecionada
+    if not vars_cont:
+        return
 
-    # Cria um gráfico mostrando o Weight of Evidence (WOE) para cada categoria da variável categórica
-    fig, ax = plt.subplots(2,1, figsize=(8,6))
-    ax[0].plot(biv[var], biv.woe, ':bo', label='woe')
-    ax[0].plot(biv[var], biv.woe_sup, 'o:r', label='limite superior')
-    ax[0].plot(biv[var], biv.woe_inf, 'o:r', label='limite inferior')
-    
-    num_cat = biv.shape[0]
-    ax[0].set_xlim([-.3, num_cat-.7])
+    # Se apenas uma variável foi selecionada
+    if len(vars_cont) == 1:
+        fig, ax = plt.subplots(figsize=(7.5, 5))
+        sns.scatterplot(data=df, x=vars_cont[0], y='Gás Natural (Mm³/dia)_log', ax=ax)
+        st.pyplot(fig)
+    else:
+        # Criando uma figura com 2 subplots em cada linha e coluna
+        fig, axs = plt.subplots(2, 2, figsize=(15, 10))
 
-    ax[0].set_ylabel("Weight of Evidence")
-    ax[0].legend(bbox_to_anchor=(.83, 1.17), ncol=3)
-    
-    ax[0].set_xticks(list(range(num_cat)))
-    ax[0].set_xticklabels(biv[var], rotation=15)
-    
-    ax[1] = biv.cont.plot.bar()
+        # Achatando o array axs para facilitar a iteração
+        axs = axs.flatten()
 
-    # Mostrar a tabela no Streamlit
-    st.dataframe(biv)
-    
-    # Mostrar o gráfico no Streamlit
+        # Loop através das variáveis
+        for i, var in enumerate(vars_cont):
+            # Removendo os subplots vazios
+            if i > len(vars_cont) - 1:
+                fig.delaxes(axs[i])
+            else:
+                # Criando um gráfico de dispersão para cada variável usando Seaborn
+                sns.scatterplot(data=df, x=var, y='Gás Natural (Mm³/dia)_log', ax=axs[i])
+
+        plt.tight_layout()
+        st.pyplot(fig)
+
+@st.cache_data
+def plot_cat_bivariate(df, vars_cat):
+    # Loop através das variáveis
+    for var in vars_cat:
+        # Cria uma figura vazia
+        fig = go.Figure()
+
+        # Obtém a lista de categorias dentro da variável
+        categorias = df[var].unique()
+
+        # Gere cores aleatórias para cada categoria usando o NumPy
+        paleta_cores = {categoria: f'rgb({int(np.random.rand() * 256)}, {int(np.random.rand() * 256)}, {int(np.random.rand() * 256)})' for categoria in categorias}
+
+        # Inicializa uma lista para os rótulos do eixo x
+        labels_x = []
+
+        # Calcula a média da variável dependente para cada categoria
+        for cat in categorias:
+            media = df[df[var] == cat]['Gás Natural (Mm³/dia)'].mean()
+            # Adiciona as barras ao gráfico com cores diferentes para cada categoria
+            fig.add_trace(go.Bar(x=[cat], y=[media], name=cat, marker_color=paleta_cores[cat]))
+            # Adiciona o rótulo da categoria ao eixo x
+            labels_x.append(cat)
+
+        # Atualiza o layout do gráfico para incluir os rótulos no eixo x
+        fig.update_layout(title_text=f'Média de Gás por {var}', xaxis_title=var, yaxis_title='Média da Variável Dependente', xaxis={'type': 'category', 'categoryorder': 'array', 'categoryarray': labels_x})
+
+        # Mostra o gráfico
+        st.plotly_chart(fig)
+
+@st.cache_data
+def plot_correlation_matrix(df, vars):
+    # Selecione apenas as colunas especificadas
+    df_selected = df[vars]
+
+    # Calculando a matriz de correlação de Spearman
+    correlation_matrix = df_selected.corr(method='spearman')
+
+    # Plotando a matriz de correlação como um mapa de calor
+    fig, ax = plt.subplots(figsize=(10, 8))
+    sns.heatmap(correlation_matrix, annot=True, cmap='coolwarm', fmt='.2f', ax=ax)
+    ax.set_title('Matriz de Correlação de Spearman')
+
     st.pyplot(fig)
-    
-    return biv
 
 @st.cache_data
-def woe_continua(var, ncat, df):
-    
-    """
-    Calcula o Weight of Evidence (WOE) para uma variável contínua em relação à variável resposta "mau".
-    
-    Parâmetros:
-    - var: Nome da variável contínua.
-    - ncat: Número de categorias desejadas para a variável contínua.
-    - df: DataFrame pandas contendo as variáveis de interesse.
+def normalidade(df, vars):
+    # Se nenhuma variável foi selecionada
+    if not vars:
+        return
 
-    Retorna:
-    - biv: DataFrame com WOE e proporção de eventos.
+    # Determinando o número de linhas e colunas para os subplots
+    n = len(vars)
+    ncols = 3
+    nrows = n // ncols + (n % ncols > 0)
 
-    A função realiza as seguintes etapas:
-    1. Cria uma nova coluna 'bom' no DataFrame 'df' que é igual a 1 menos o valor da coluna 'mau'.
-    2. Divide a variável contínua 'var' em 'ncat' categorias usando qcut, retendo os limites das categorias.
-    3. Agrupa o DataFrame 'df' pelas categorias criadas.
-    4. Calcula estatísticas como a quantidade de bons, quantidade de maus, proporção de maus e média da variável contínua para cada categoria.
-    5. Calcula o erro padrão, limites de confiança e logit da proporção de maus para cada categoria.
-    6. Calcula o Weight of Evidence (WOE) para cada categoria.
-    7. Gera um gráfico de barras e um gráfico de linha mostrando o WOE para cada categoria e a contagem de observações em cada categoria.
-    """
-    
-    # 1. Cria uma nova coluna 'bom' no DataFrame 'df' que é igual a 1 menos o valor da coluna 'mau'
-    df['bom'] = 1 - df.mau
-    
-    # 2. Divide a variável contínua 'var' em 'ncat' categorias usando qcut, retendo os limites das categorias
-    cat_srs, bins = pd.qcut(df[var], ncat, retbins=True, precision=0, duplicates='drop')
-    
-    # 3. Agrupa o DataFrame 'df' pelas categorias criadas
-    g = df.groupby(cat_srs)
+    # Criando uma figura com subplots suficientes para todas as variáveis
+    fig, axs = plt.subplots(nrows, ncols, figsize=(15, nrows*5))
+    axs = axs.flatten()  # para facilitar a iteração
 
-    # 4. Calcula estatísticas para cada categoria
-    biv = pd.DataFrame({'qt_bom': g['bom'].sum(),  # Soma dos valores "bom" para cada categoria
-                        'qt_mau': g['mau'].sum(),  # Soma dos valores "mau" para cada categoria
-                        'mau': g['mau'].mean(),   # Proporção de valores "mau" para cada categoria
-                        var: g[var].mean(),       # Média da variável contínua para cada categoria
-                        'cont': g[var].count()})  # Contagem de valores para cada categoria
-    
-    # 5. Calcula o erro padrão da proporção de valores "mau" para cada categoria
-    biv['ep'] = (biv.mau * (1 - biv.mau) / biv.cont) ** 0.5
-    
-    # Calcula os limites de confiança para a proporção de valores "mau" para cada categoria
-    biv['mau_sup'] = biv.mau + t.ppf([0.975], biv.cont - 1) * biv.ep
-    biv['mau_inf'] = biv.mau + t.ppf([0.025], biv.cont - 1) * biv.ep
-    
-    # Calcula o logit da proporção de valores "mau" para cada categoria
-    biv['logit'] = np.log(biv.mau / (1 - biv.mau))
-    
-    # Calcula os limites de confiança para o logit da proporção de valores "mau" para cada categoria
-    biv['logit_sup'] = np.log(biv.mau_sup / (1 - biv.mau_sup))
-    biv['logit_inf'] = np.log(biv.mau_inf / (1 - biv.mau_inf))
+    # Loop através das variáveis
+    for i, var in enumerate(vars):
+        # para plotar
+        data = df[var]
 
-    # 6. Calcula o Weight of Evidence (WOE) geral
-    tx_mau_geral = df.mau.mean()
-    woe_geral = np.log(tx_mau_geral / (1 - tx_mau_geral))
+        # Criando um gráfico de distribuição para cada variável usando Seaborn
+        sns.distplot(data, ax=axs[i])
 
-    # Calcula o Weight of Evidence (WOE) para cada categoria da variável contínua
-    biv['woe'] = biv.logit - woe_geral
-    
-    # Calcula os limites de confiança para o Weight of Evidence (WOE) para cada categoria da variável contínua
-    biv['woe_sup'] = biv.logit_sup - woe_geral
-    biv['woe_inf'] = biv.logit_inf - woe_geral
+        # Realizando o teste de Kolmogorov-Smirnov para a variável atual
+        ks_test = stats.kstest(data, 'norm')
 
-    # 7. Gera um gráfico mostrando o Weight of Evidence (WOE) para cada categoria da variável contínua
-    fig, ax = plt.subplots(2, 1, figsize=(8, 6))
-    ax[0].plot(biv[var], biv.woe, ':bo', label='woe')
-    ax[0].plot(biv[var], biv.woe_sup, 'o:r', label='limite superior')
-    ax[0].plot(biv[var], biv.woe_inf, 'o:r', label='limite inferior')
-    
-    num_cat = biv.shape[0]
+        # Adicionando o resultado do teste ao gráfico
+        axs[i].annotate(f"D={ks_test.statistic:.4f}", xy=(0.6, 0.8), xycoords='axes fraction')
 
-    ax[0].set_ylabel("Weight of Evidence")
-    ax[0].legend(bbox_to_anchor=(.83, 1.17), ncol=3)
-    
-    ax[1] = biv.cont.plot.bar()
+    # Removendo os gráficos extras
+    for i in range(n, nrows*ncols):
+        fig.delaxes(axs[i])
 
-    # Mostrar a tabela no Streamlit
-    st.dataframe(biv)
-    
-    # Mostrar o gráfico no Streamlit
+    plt.tight_layout()
     st.pyplot(fig)
-    
-    return biv
+
+@st.cache_data
+def calculate_vif(df, vars):
+    # Selecione apenas as colunas especificadas
+    df_numerics = df[vars]
+
+    # Adicione uma constante ao dataframe
+    df_numerics = add_constant(df_numerics)
+
+    # Calcule o VIF para cada variável
+    vars_vif = pd.DataFrame()
+    vars_vif["VIF Factor"] = [variance_inflation_factor(df_numerics.values, i) for i in range(df_numerics.shape[1])]
+    vars_vif["Feature"] = df_numerics.columns
+
+    return vars_vif.round(2)
 
 def main():  
-    # Definir o template
-    st.set_page_config(page_title='Análises',
-                       page_icon='💲',
-                       layout='wide')
-
     # Título centralizado
     st.markdown('<div style="display:flex; align-items:center; justify-content:center;"><h1 style="font-size:4.5rem;">Análises</h1></div>',
                 unsafe_allow_html=True)
@@ -358,19 +389,19 @@ def main():
 
     df = carregar_dados(uploaded_file)
 
-    if df is not None:
-        # Adicionar caixa de seleção na barra lateral
-        selecao_dados = st.sidebar.selectbox(
+    df = transformacao_dados(df)
+
+    selecao_dados = st.sidebar.selectbox(
             "Selecione uma opção",
-            ("Info", "Descritiva")
+            ("Info", "Descritivas", "Suposições Modelo")
         )
 
-        if selecao_dados == "Info":
+    if selecao_dados == "Info":
             # Mostrar título
             st.header("Dicionário de dados:")
 
             # Mostrar imagem
-            st.image("https://raw.githubusercontent.com/Caiodrp/Prever-Inadimplencia-ST/main/img/dic_dados.png")
+            st.image("https://raw.githubusercontent.com/Caiodrp/Prever-Inadimplencia-St/main/dic_dados.png")
 
             # Mostrar cabeçalho do DataFrame
             st.dataframe(df.head())
@@ -384,48 +415,55 @@ def main():
                 # Exibir relatório HTML na página do Streamlit
                 components.html(html, width=900, height=500, scrolling=True)
 
+    elif selecao_dados == "Descritivas":
+        # Mostrar título
+        st.header("Descritivas:")
+        # Adicionar caixa de seleção na barra lateral
+        selecao_desc = st.sidebar.selectbox(
+            "Selecione uma opção",
+            ("Contínuas", "Categóricas")
+        )
+        if selecao_desc== "Contínuas":
+            # Filtrar as variáveis contínuas
+            vars_cont = df.select_dtypes(['int64', 'float64']).columns.tolist()
+
+            # Exibir o DataFrame descritivo
+            st.dataframe(describe_continuous(df))
+
+            # Adicionar um widget multiselect para selecionar as variáveis a serem observadas
+            variaveis = st.multiselect("Selecione as variáveis", vars_cont)
+
+            # Plotar os gráficos para cada variável contínua
+            plot_cont_bivariate(df, variaveis)
         else:
-            # Adicionar caixa de seleção na barra lateral
-            selecao_compras_acessos = st.sidebar.selectbox(
-                "Selecione uma opção",
-                ("Bivariada", "IV/WOE")
-            )
-            if selecao_compras_acessos == "Bivariada":
-                # Adicionar um widget multiselect para selecionar as variáveis a serem observadas
-                variaveis = st.multiselect("Selecione as variáveis", df.columns.tolist())
+            # Filtrar as variáveis categóricas
+            vars_cat = df.select_dtypes(['object']).columns.tolist()
 
-                # Criar duas colunas
-                col1, col2 = st.columns(2)
+            # Exibir o DataFrame descritivo
+            st.dataframe(describe_categorical(df))
 
-                # Adicionar um slider para selecionar o número de categorias na primeira coluna
-                ncat = col1.slider("Selecione o número de categorias", 2, 10, step=1)
+            # Adicionar um widget multiselect para selecionar as variáveis a serem observadas
+            variaveis = st.multiselect("Selecione as variáveis", vars_cat)
 
-                for var in variaveis:
-                    if len(df[var].unique()) > 10:
-                        plot_cont_bivariate(df, var, ncat)
-                    else:
-                        plot_cat_bivariate(df, var)
-            else:  # IV/WOE
-                # Adicionar outro selectbox para IV/WOE
-                selecao_iv_woe = st.selectbox(
-                    "Selecione uma opção",
-                    ("IV", "WOE")
-                )
-                if selecao_iv_woe == "IV":
-                    # Excluindo as colunas que não precisam ser calculadas
-                    df = df.drop(columns=['Unnamed: 0', 'data_ref', 'index'])
-                    # Chama a função calcula_iv
-                    st.dataframe(calcula_iv(df))
-                else:  # WOE
-                    # Adicionar um widget multiselect para selecionar as variáveis a serem observadas
-                    variaveis = st.multiselect("Selecione as variáveis", df.columns.tolist())
-                    # Adicionar um slider para selecionar o número de categorias
-                    ncat = st.slider("Selecione o número de categorias", 1, 10, step=1)
-                    for var in variaveis:
-                        if len(df[var].unique()) > 10:  # Se a variável tem mais de 10 valores únicos, é contínua
-                            woe_continua(var, ncat, df)
-                        else:  # Se a variável tem 10 ou menos valores únicos, é categórica
-                            woe_discreta(var, df)
+            # Plotar os gráficos para cada variável categórica
+            plot_cat_bivariate(df, variaveis)
+
+    else:
+        # Mostrar título
+        st.header("Suposições")
+        # Adicionar caixa de seleção na barra lateral
+        selecao_suposicoes = st.sidebar.selectbox(
+            "Selecione uma opção",
+            ("Normalidade/outliers", "Correlação/VIF")
+        )
+        # Adicionar um widget multiselect para selecionar as variáveis a serem observadas
+        variaveis = st.multiselect("Selecione as variáveis", df.columns.tolist())
+
+        if selecao_suposicoes == "Normalidade/outliers":
+            normalidade(df, variaveis)
+        else:  # Correlação/VIF
+            st.dataframe(calculate_vif(df, variaveis))
+            plot_correlation_matrix(df, variaveis)
 
 if __name__ == "__main__":
     main()
