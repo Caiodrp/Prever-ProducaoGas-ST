@@ -6,7 +6,6 @@ import joblib
 import io
 import os
 import matplotlib.pyplot as plt
-import tempfile
 import base64
 import seaborn as sns
 import plotly.graph_objects as go

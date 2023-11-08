@@ -4,10 +4,8 @@ import seaborn as sns
 import numpy as np
 import matplotlib.pyplot as plt
 import streamlit.components.v1 as components
-import plotly.express as px
-import base64
 import plotly.graph_objects as go
-import chardet
+
 
 from scipy import stats
 from sklearn.ensemble import IsolationForest

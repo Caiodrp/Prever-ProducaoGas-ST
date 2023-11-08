@@ -35,10 +35,13 @@ def main():
     st.write()
     st.write(
         '<div style="display:flex; align-items:center; justify-content:center;">'
-        '<iframe width="560" height="315" src="https://www.youtube.com/embed/dQw4w9WgXcQ?start=40" frameborder="0" allow="autoplay; encrypted-media" allowfullscreen></iframe>'
+        '<video width="560" height="315" controls>'
+        '<source src="https://github.com/Caiodrp/Prever-ProducaoGas-ST/raw/main/tutorial.webm" type="video/webm">'
+        '</video>'
         '</div>',
         unsafe_allow_html=True
     )
+
     # Informações sobre os dados
     st.write('Os dados foram obtidos a partir do link: https://dados.gov.br/dados/conjuntos-dados/producao-de-petroleo-e-gas-natural-por-poco')
     st.write('Eles foram transformados conforme explicado no Notebook no diretório do GitHub.')
