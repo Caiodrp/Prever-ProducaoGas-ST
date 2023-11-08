@@ -8,7 +8,9 @@ https://github.com/Caiodrp/Prever-ProducaoGas-ST/assets/99834159/6085971e-41c2-4
 
 ## Coleta de Dados
 
-Os dados foram capturados e transformados a partir de fontes confiáveis. O arquivo CSV utilizado para o treinamento do modelo pode ser encontrado aqui.
+Os dados foram capturados e transformados a partir de fontes confiáveis. Os arquivos brutos são encontrados no site de dados abertos do governo: https://dados.gov.br/dados/conjuntos-dados/producao-de-petroleo-e-gas-natural-por-poco.
+
+Já a base trasnformada e agrupada por semestre e localidade se encontra qui no diretório: https://github.com/Caiodrp/Prever-ProducaoGas-ST/blob/main/df_todos.csv
 
 ## Modelagem
 
