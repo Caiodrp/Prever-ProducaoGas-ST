@@ -39,44 +39,54 @@ def main():
         '</div>',
         unsafe_allow_html=True
     )
-    # Arquivo csv modelo 
-    st.write('# Modelos dos arquivos CSV')
-    st.write('Os arquivos a serem usados devem ser com o nome e ordem das colunas identicos a do modelo')
-    url = "https://raw.githubusercontent.com/Caiodrp/Prever-ProducaoGas-ST/main/df_todos.csv"
+    # Informações sobre os dados
+    st.write('Os dados foram obtidos a partir do link: https://dados.gov.br/dados/conjuntos-dados/producao-de-petroleo-e-gas-natural-por-poco')
+    st.write('Eles foram transformados conforme explicado no Notebook no diretório do GitHub.')
+    st.write('O segundo arquivo contém as variáveis utilizadas no treinamento do modelo.')
 
-    # Adicionando botão para download
+    # Modelos dos arquivos CSV
+    st.write('# Modelos dos arquivos CSV')
+    st.write('Os arquivos a serem usados devem ter o nome e a ordem das colunas idênticos ao do modelo.')
+
+    # Adicionando botão para download do arquivo df_todos.csv
+    url = "https://github.com/Caiodrp/Prever-ProducaoGas-ST/raw/main/df_todos.csv"
     st.markdown(download_file(url), unsafe_allow_html=True)
+
+    # Adicionando botão para download do arquivo X_train_transformado2.csv
+    url = "https://github.com/Caiodrp/Prever-ProducaoGas-ST/raw/main/X_train_transformado2.csv"
+    st.markdown(download_file(url), unsafe_allow_html=True)
+
 
     # Adicionando texto
     st.write(
         """
         # Análise
 
-        Na página "Análise", você pode carregar e visualizar diferentes informações sobre o conjunto de dados "online_shoppers_intention", que são o comportamento de diversos acessos de usuários em diferentes tipos de sites, disponível em https://archive.ics.uci.edu/dataset/468/online+shoppers+purchasing+intention+dataset.
+        Na página "Análise", você pode carregar e visualizar diferentes informações sobre os dados. 
 
         ### Info
 
-        A subseção "Info" exibe informações principais sobre a estrutura e o dicionário dos dados.
+        A subseção "Info" exibe informações sobre os dados.
 
         ### Descritiva
 
-        A subseção "Descritiva" contém duas partes:
+        A subseção "Descritiva" permite o carregamento de dados para análises descritivas das variáveis.
 
-        - **Bivariada**: Esta parte exibe a relação entre a variável de interesse e as demais variáveis.
-        
-        - **WOE/IV**: Esta parte exibe a importância da variável para o modelo.
+        ### Suposições do Modelo
 
-        # Prever Inadimplência
+        Esta parte faz análises estatísticas visando a criação do modelo.
 
-        Na página "Prever Inadimplência", você pode fazer previsões de inadimplência para novos dados.
+        # Prever Produção
+
+        Na página "Prever Produção", você pode fazer previsões usando novos dados inseridos ou carregados.
 
         ### Prever Novos Dados
 
-        Para fazer previsões para novos dados, você precisa preencher os campos na barra lateral ou carregar um arquivo CSV com novos dados e clicar em "Prever Inadimplência". 
+        Para fazer previsões para novos dados, você precisa preencher os campos na barra lateral ou carregar um arquivo CSV com novos dados e clicar em "Prever Produção". 
 
         ### Relatório Gerencial
 
-        A subseção "Relatório Gerencial" contém relatórios estatísticos levando em conta o problema de negócio.
+        A subseção "Relatório Gerencial" contém um relatório do modelo, mostrando o quanto cada variável usada para o modelo interfere quantificamente no resultado da média diária de gás natural.
         
         """
     )

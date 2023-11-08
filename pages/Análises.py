@@ -389,81 +389,83 @@ def main():
 
     df_raw = carregar_dados(uploaded_file)
 
-    df = transformacao_dados(df_raw)
+    # Verifique se o df_raw não é None antes de tentar transformar os dados
+    if df_raw is not None:
+        df = transformacao_dados(df_raw)
 
-    selecao_dados = st.sidebar.selectbox(
-            "Selecione uma opção",
-            ("Info", "Descritivas", "Suposições Modelo")
-        )
+        selecao_dados = st.sidebar.selectbox(
+                "Selecione uma opção",
+                ("Info", "Descritivas", "Suposições Modelo")
+            )
 
-    if selecao_dados == "Info":
+        if selecao_dados == "Info":
+                # Mostrar título
+                st.header("Dicionário de dados:")
+
+                # Mostrar imagem
+                st.image("https://raw.githubusercontent.com/Caiodrp/Prever-ProducaoGas-ST/main/img/dic_dados.png")
+
+                # Mostrar cabeçalho do DataFrame
+                st.dataframe(df_raw.head())
+
+                # Adicionar botão para gerar relatório HTML
+                if st.button("Gerar relatório"):
+                    # Gerar relatório HTML usando o ydata-profiling
+                    profile = ProfileReport(df)
+                    html = profile.to_html()
+
+                    # Exibir relatório HTML na página do Streamlit
+                    components.html(html, width=900, height=500, scrolling=True)
+
+        elif selecao_dados == "Descritivas":
             # Mostrar título
-            st.header("Dicionário de dados:")
+            st.header("Descritivas:")
+            # Adicionar caixa de seleção na barra lateral
+            selecao_desc = st.sidebar.selectbox(
+                "Selecione uma opção",
+                ("Contínuas", "Categóricas")
+            )
+            if selecao_desc== "Contínuas":
+                # Filtrar as variáveis contínuas
+                vars_cont = df.select_dtypes(['int64', 'float64']).columns.tolist()
 
-            # Mostrar imagem
-            st.image("https://raw.githubusercontent.com/Caiodrp/Prever-ProducaoGas-ST/main/img/dic_dados.png")
+                # Exibir o DataFrame descritivo
+                st.dataframe(describe_continuous(df))
 
-            # Mostrar cabeçalho do DataFrame
-            st.dataframe(df_raw.head())
+                # Adicionar um widget multiselect para selecionar as variáveis a serem observadas
+                variaveis = st.multiselect("Selecione as variáveis", vars_cont)
 
-            # Adicionar botão para gerar relatório HTML
-            if st.button("Gerar relatório"):
-                # Gerar relatório HTML usando o ydata-profiling
-                profile = ProfileReport(df)
-                html = profile.to_html()
+                # Plotar os gráficos para cada variável contínua
+                plot_cont_bivariate(df, variaveis)
+            else:
+                # Filtrar as variáveis categóricas
+                vars_cat = df.select_dtypes(['object']).columns.tolist()
 
-                # Exibir relatório HTML na página do Streamlit
-                components.html(html, width=900, height=500, scrolling=True)
+                # Exibir o DataFrame descritivo
+                st.dataframe(describe_categorical(df))
 
-    elif selecao_dados == "Descritivas":
-        # Mostrar título
-        st.header("Descritivas:")
-        # Adicionar caixa de seleção na barra lateral
-        selecao_desc = st.sidebar.selectbox(
-            "Selecione uma opção",
-            ("Contínuas", "Categóricas")
-        )
-        if selecao_desc== "Contínuas":
-            # Filtrar as variáveis contínuas
-            vars_cont = df.select_dtypes(['int64', 'float64']).columns.tolist()
+                # Adicionar um widget multiselect para selecionar as variáveis a serem observadas
+                variaveis = st.multiselect("Selecione as variáveis", vars_cat)
 
-            # Exibir o DataFrame descritivo
-            st.dataframe(describe_continuous(df))
+                # Plotar os gráficos para cada variável categórica
+                plot_cat_bivariate(df, variaveis)
 
-            # Adicionar um widget multiselect para selecionar as variáveis a serem observadas
-            variaveis = st.multiselect("Selecione as variáveis", vars_cont)
-
-            # Plotar os gráficos para cada variável contínua
-            plot_cont_bivariate(df, variaveis)
         else:
-            # Filtrar as variáveis categóricas
-            vars_cat = df.select_dtypes(['object']).columns.tolist()
-
-            # Exibir o DataFrame descritivo
-            st.dataframe(describe_categorical(df))
-
+            # Mostrar título
+            st.header("Suposições")
+            # Adicionar caixa de seleção na barra lateral
+            selecao_suposicoes = st.sidebar.selectbox(
+                "Selecione uma opção",
+                ("Normalidade/outliers", "Correlação/VIF")
+            )
             # Adicionar um widget multiselect para selecionar as variáveis a serem observadas
-            variaveis = st.multiselect("Selecione as variáveis", vars_cat)
+            variaveis = st.multiselect("Selecione as variáveis", df.columns.tolist())
 
-            # Plotar os gráficos para cada variável categórica
-            plot_cat_bivariate(df, variaveis)
-
-    else:
-        # Mostrar título
-        st.header("Suposições")
-        # Adicionar caixa de seleção na barra lateral
-        selecao_suposicoes = st.sidebar.selectbox(
-            "Selecione uma opção",
-            ("Normalidade/outliers", "Correlação/VIF")
-        )
-        # Adicionar um widget multiselect para selecionar as variáveis a serem observadas
-        variaveis = st.multiselect("Selecione as variáveis", df.columns.tolist())
-
-        if selecao_suposicoes == "Normalidade/outliers":
-            normalidade(df, variaveis)
-        else:  # Correlação/VIF
-            st.dataframe(calculate_vif(df, variaveis))
-            plot_correlation_matrix(df, variaveis)
+            if selecao_suposicoes == "Normalidade/outliers":
+                normalidade(df, variaveis)
+            else:  # Correlação/VIF
+                st.dataframe(calculate_vif(df, variaveis))
+                plot_correlation_matrix(df, variaveis)
 
 if __name__ == "__main__":
     main()

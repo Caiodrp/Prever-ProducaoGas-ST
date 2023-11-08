@@ -4,9 +4,12 @@ import numpy as np
 import requests
 import joblib
 import io
-import plotly.graph_objects as go
-import plotly.express as px
+import os
+import matplotlib.pyplot as plt
 import tempfile
+import base64
+import seaborn as sns
+import plotly.graph_objects as go
 
 from io import BytesIO
 from pycaret.regression import load_model, predict_model
@@ -218,10 +221,8 @@ def carregar_modelo(url):
     modelo = joblib.load(io.BytesIO(response.content))
     return modelo
 
-@st.cache_data
-def interpret_coefficients(model, df_imported_encoded):
-    # Função para interpretar os coeficientes do modelo
-    coef = pd.DataFrame(model.coef_, df_imported_encoded.columns, columns=['Coefficient'])
+def interpret_coefficients(model, X_train):
+    coef = pd.DataFrame(model.coef_, X_train.columns, columns=['Coefficient'])
     return coef
 
 @st.cache_data
@@ -230,40 +231,45 @@ def plot_continuous(coef_df, variable):
     changes = [(np.exp(coef_df.loc[variable, 'Coefficient'] * increase / 100) - 1) * 100 for increase in np.arange(0, 110, 10)]
     
     # Crie o gráfico
-    plt.figure(figsize=(10, 5))
-    plt.plot(np.arange(0, 110, 10), changes, marker='o')
-    plt.title('Impacto de um aumento em ' + variable + ' na variável de resposta')
-    plt.xlabel('Aumento na ' + variable + ' (%)')
-    plt.ylabel('Mudança na variável de resposta (%)')
-    plt.xticks(np.arange(0, 110, 10))
-    plt.yticks(np.arange(min(changes), max(changes), 10))
-    plt.grid(True)
+    fig = go.Figure(data=go.Scatter(x=np.arange(0, 110, 10), y=changes, mode='markers+lines'))
+    fig.update_layout(title='Impacto de um aumento em ' + variable + ' na variável de resposta',
+                      xaxis_title='Aumento na ' + variable + ' (%)',
+                      yaxis_title='Mudança na variável de resposta (%)')
 
     # Exibir o gráfico no Streamlit
-    st.pyplot(plt)
+    st.plotly_chart(fig)
 
 @st.cache_data
-def plot_categorical(coef_df, variable):
-    # Filtrar as colunas que pertencem à variável categórica selecionada
-    categories = [col for col in coef_df.index if col.startswith(variable)]
+def plot_categorical(coef_df, variable_prefix):
+    # Filtrar as colunas que pertencem à mesma variável categórica
+    categories = [col for col in coef_df.index if col.startswith(variable_prefix)]
     
     # Calcule a mudança na variável de resposta para cada categoria
     changes = [np.exp(coef_df.loc[category, 'Coefficient']) - 1 for category in categories]
     
+    # Encontre a parte comum no início das categorias
+    common_prefix = os.path.commonprefix(categories)
+    
     # Crie o gráfico
-    plt.figure(figsize=(12, 6))
-    bar_colors = ['#{:06x}'.format(int(np.random.rand() * 0xFFFFFF)) for _ in range(len(categories))]
-    plt.bar(categories, changes, color=bar_colors)
-    plt.title('Impacto das categorias de ' + variable + ' na variável de resposta')
-    plt.xlabel('Categoria')
-    plt.ylabel('Mudança na média de produção de Gás por categoria (%)')
-    plt.xticks(rotation=90)
-    plt.grid(True)
+    fig = go.Figure()
+    for category, change in zip(categories, changes):
+        fig.add_trace(go.Bar(x=[category.replace(common_prefix, '')[:25]], 
+                             y=[change], 
+                             marker_color='rgb('+str(np.random.randint(0,255))+','+str(np.random.randint(0,255))+','+str(np.random.randint(0,255))+')',
+                             showlegend=False))
+        
+    fig.update_layout(
+        title='Impacto das categorias de ' + variable_prefix + ' na variável de resposta',
+        xaxis_title='Categoria',
+        yaxis_title='Mudança na média de produção de Gás por categoria (%)',
+        autosize=True,
+        width=1000,  # Largura do gráfico
+        height=800)  # Altura do gráfico
 
     # Exibir o gráfico no Streamlit
-    st.pyplot(plt)
+    st.plotly_chart(fig)
 
-def main():  
+def main():
     # Título centralizado
     st.markdown('<div style="display:flex; align-items:center; justify-content:center;"><h1 style="font-size:4.5rem;">Prever Produção</h1></div>',
                 unsafe_allow_html=True)
@@ -363,86 +369,99 @@ def main():
             else:
                 # Carregar dados
                 uploaded_file = st.sidebar.file_uploader("Faça upload do arquivo CSV", type=["csv"])
-                df_carregar = carregar_dados(uploaded_file)
 
-                # Limitar o DataFrame a 1000 linhas
-                if len(df_carregar) > 1000:
-                    df_carregar = df_carregar.sample(n=1000)
+                # Verificar se um arquivo foi carregado
+                if uploaded_file is not None:
+                    df_carregar = carregar_dados(uploaded_file)
 
-                # Aplicar a função transformacao_dados_prev
-                df_carregar = transformacao_dados_prev(df_carregar)
+                    # Limitar o DataFrame a 1000 linhas
+                    if len(df_carregar) > 1000:
+                        df_carregar = df_carregar.sample(n=1000)
 
-                # Retirando colunas que não tem haver com a produção, redundantes ou não significativas.
-                cols_to_drop = ['Nome Poço Operador','Nome Poço ANP','Número do Contrato', 'Período','Condensado (bbl/dia)',
-                    'Gás Natural (Mm³/dia) N Assoc', 'Gás Natural (Mm³/dia) Total', 'Volume Gás Royalties (m³/mês)',
-                    'Instalação Destino', 'Tipo Instalação', 'Período da Carga','Óleo (bbl/dia)','Campo']
-                df_carregar = df_carregar.drop(columns=cols_to_drop)
+                    # Aplicar a função transformacao_dados_prev
+                    df_carregar = transformacao_dados_prev(df_carregar)
 
-                # Lista de colunas para transformar
-                cols_to_transform = ['Petróleo (bbl/dia)', 'Água (bbl/dia)', 'Tempo de Produção (hs por mês)', 'Gás Natural (Mm³/dia)']
+                    # Retirando colunas que não tem haver com a produção, redundantes ou não significativas.
+                    cols_to_drop = ['Nome Poço Operador','Nome Poço ANP','Número do Contrato', 'Período','Condensado (bbl/dia)',
+                        'Gás Natural (Mm³/dia) N Assoc', 'Gás Natural (Mm³/dia) Total', 'Volume Gás Royalties (m³/mês)',
+                        'Instalação Destino', 'Tipo Instalação', 'Período da Carga','Óleo (bbl/dia)','Campo']
+                    df_carregar = df_carregar.drop(columns=cols_to_drop)
 
-                # Crie novas colunas com o sufixo '_log' para as transformações
-                for col in cols_to_transform:
-                    df_carregar[col + '_log'] = np.log(df_carregar[col])
+                    # Lista de colunas para transformar
+                    cols_to_transform = ['Petróleo (bbl/dia)', 'Água (bbl/dia)', 'Tempo de Produção (hs por mês)', 'Gás Natural (Mm³/dia)']
 
-                # Carregar o modelo
-                url = 'https://github.com/Caiodrp/Prever-ProducaoGas-ST/raw/main/reg_final.pkl'
-                modelo = carregar_modelo(url)
+                    # Crie novas colunas com o sufixo '_log' para as transformações
+                    for col in cols_to_transform:
+                        df_carregar[col + '_log'] = np.log(df_carregar[col])
 
-                # Suponha que 'modelo' é o seu modelo treinado e 'colunas_modelo' são as colunas usadas para treinar o modelo
-                colunas_modelo = modelo.get_booster().feature_names
-                st.write(colunas_modelo)
+                    # Carregar o modelo
+                    url = 'https://github.com/Caiodrp/Prever-ProducaoGas-ST/raw/main/reg_final.pkl'
+                    modelo = carregar_modelo(url)
 
-                # # Lista de todas as colunas que serão usadas pelo modelo
-                # vars_usar = ['Estados_Bacias','Local','Operador_Agrupado','Grau_API_Cat',
-                # 'Petróleo (bbl/dia)_log','Água (bbl/dia)_log',
-                # 'Tempo de Produção (hs por mês)_log']
+                    # Aplicar get_dummies para preparar os dados para o modelo
+                    df_carregar = pd.get_dummies(df_carregar)
 
-                # # Aplicar get_dummies para preparar os dados para o modelo
-                # df_carregar = pd.get_dummies(df_carregar)
-                # st.write(df_carregar)
+                    # Importe o dataframe do GitHub
+                    url = 'https://raw.githubusercontent.com/Caiodrp/Prever-ProducaoGas-ST/main/X_train_transformado2.csv'
+                    X_train = importa_dados(url)
 
-                # if st.button('PREVER'):
-                #     # Fazer previsões com o modelo
-                #     pred_log = modelo.predict(df_carregar)
+                    # Adicione colunas faltantes em 'df_carregar' que estão presentes em 'X_train'
+                    for coluna in set(X_train.columns) - set(df_carregar.columns):
+                        df_carregar[coluna] = 0.0
 
-                #     # Retransformar a previsão para a escala original
-                #     pred = np.exp(pred_log)
+                    # Remova colunas extras em 'df_carregar' que não estão presentes em 'X_train'
+                    for coluna in set(df_carregar.columns) - set(X_train.columns):
+                        df_carregar = df_carregar.drop(coluna, axis=1)
 
-                # # Fazer previsões com o modelo
-                # pred = predict_model(modelo, data=df)
+                    st.write(df_carregar)
 
-                # # Transformar a coluna 'prediction_label' com a função exponencial
-                # pred['prediction_label'] = np.exp(pred['prediction_label'])
+                    if st.button('PREVER'):
+                        # Fazer previsões com o modelo
+                        pred_log = modelo.predict(df_carregar)
 
-                # st.write(pred)
+                        # Retransformar a previsão para a escala original
+                        pred = np.exp(pred_log)
 
-        # else:
-        #     # Variáveis selecionadas
-        #     vars_encoded = ['Estados_Bacias','Local','Operador_Agrupado','Grau_API_Cat',
-        #     'Gás Natural (Mm³/dia)_log','Petróleo (bbl/dia)_log','Água (bbl/dia)_log',
-        #                     'Tempo de Produção (hs por mês)_log']
+                        # Adicionar a previsão como uma nova coluna no dataframe
+                        df_carregar['Previsão'] = pred
 
-        #     # Aplicar get_dummies nas variáveis selecionadas
-        #     df_imported_encoded = pd.get_dummies(df_imported[vars_encoded], columns=df[vars_encoded].select_dtypes(include=['object']).columns)
+                        # Converter o dataframe para um arquivo CSV
+                        csv = df_carregar.to_csv(index=False)
+                        b64 = base64.b64encode(csv.encode()).decode()  # some strings <-> bytes conversions necessary here
+                        href = f'<a href="data:file/csv;base64,{b64}" download="previsao.csv">Clique aqui para baixar o arquivo CSV com a previsão</a>'
 
-        #     # Pegando o df das variáveis do modelo
-        #     coef_df = interpret_coefficients(modelo, df_imported_encoded)
+                        # Disponibilizar o arquivo CSV para download
+                        st.markdown(href, unsafe_allow_html=True)
+                else:
+                    st.write("Por favor, faça o upload de um arquivo CSV.")
 
-        #     # Variáveis contínuas e categóricas
-        #     vars_continuas = ['Gás Natural (Mm³/dia)_log', 'Petróleo (bbl/dia)_log', 'Água (bbl/dia)_log', 'Tempo de Produção (hs por mês)_log']
-        #     vars_categoricas = ['Estados_Bacias', 'Local', 'Operador_Agrupado', 'Grau_API_Cat']
+        else:
+            # Importe o dataframe do GitHub
+            url = 'https://raw.githubusercontent.com/Caiodrp/Prever-ProducaoGas-ST/main/X_train_transformado2.csv'
+            X_train = importa_dados(url)
 
-        #     # Widget de rádio para escolher entre variáveis contínuas e categóricas
-        #     tipo_variavel = st.radio("Escolha uma opção", ("Variáveis Contínuas", "Variáveis Categóricas"))
+            # Carregar o modelo
+            url_modelo = 'https://github.com/Caiodrp/Prever-ProducaoGas-ST/raw/main/reg_final.pkl'
+            modelo = carregar_modelo(url_modelo)
 
-        #     # Caixa de seleção para selecionar a variável a ser plotada
-        #     if tipo_variavel == "Variáveis Contínuas":
-        #         variavel_selecionada = st.selectbox("Selecione a variável", options=vars_continuas)
-        #         plot_continuous(coef_df, variavel_selecionada)
-        #     else:
-        #         variavel_selecionada = st.selectbox("Selecione a variável", options=vars_categoricas)
-        #         plot_categorical(coef_df, variavel_selecionada)
+            # Obter os coeficientes do modelo
+            coef_df = interpret_coefficients(modelo, X_train)
+
+            # Obtenha as colunas contínuas e categóricas de coef_df
+            colunas_continuas = [col for col in coef_df.index if X_train[col].nunique() > 2]
+            colunas_categoricas = [col.split('_')[0] for col in coef_df.index if X_train[col].nunique() == 2]
+            prefixos_categoricos = list(set(colunas_categoricas))
+
+            # Widget para selecionar o tipo de variável
+            var_type = st.sidebar.radio("Selecione o tipo de variável", ('Contínua', 'Categórica'))
+
+            # Widget para selecionar a variável específica
+            if var_type == 'Contínua':
+                variable = st.sidebar.selectbox("Selecione a variável", colunas_continuas)
+                plot_continuous(coef_df, variable)
+            else:
+                variable_prefix = st.sidebar.selectbox("Selecione a variável", prefixos_categoricos)
+                plot_categorical(coef_df, variable_prefix)
 
 if __name__ == "__main__":
     main()
