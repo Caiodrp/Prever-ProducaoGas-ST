@@ -12,3 +12,4 @@ statsmodels==0.13.5
 joblib==1.1.0
 pycaret==3.0.4
 protobuf==3.20.*
+altair<5
