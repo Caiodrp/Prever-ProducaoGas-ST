@@ -42,7 +42,7 @@ def main():
     # Arquivo csv modelo 
     st.write('# Modelos dos arquivos CSV')
     st.write('Os arquivos a serem usados devem ser com o nome e ordem das colunas identicos a do modelo')
-    url = "https://github.com/seu_usuario/seu_repositorio/raw/main/arquivo.xlsx"
+    url = "https://raw.githubusercontent.com/Caiodrp/Prever-ProducaoGas-ST/main/df_todos.csv"
 
     # Adicionando botão para download
     st.markdown(download_file(url), unsafe_allow_html=True)

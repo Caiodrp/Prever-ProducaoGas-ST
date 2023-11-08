@@ -22,7 +22,7 @@ st.set_page_config(page_title='Análises',
                     page_icon='🏭',
                     layout='wide')
 
-@st.cache_data
+
 def carregar_dados(uploaded_file):
     if uploaded_file is not None:
         file_extension = uploaded_file.name.split(".")[-1].lower()
@@ -387,9 +387,9 @@ def main():
         type=["csv"]
     )
 
-    df = carregar_dados(uploaded_file)
+    df_raw = carregar_dados(uploaded_file)
 
-    df = transformacao_dados(df)
+    df = transformacao_dados(df_raw)
 
     selecao_dados = st.sidebar.selectbox(
             "Selecione uma opção",
@@ -401,10 +401,10 @@ def main():
             st.header("Dicionário de dados:")
 
             # Mostrar imagem
-            st.image("https://raw.githubusercontent.com/Caiodrp/Prever-Inadimplencia-St/main/dic_dados.png")
+            st.image("https://raw.githubusercontent.com/Caiodrp/Prever-ProducaoGas-ST/main/img/dic_dados.png")
 
             # Mostrar cabeçalho do DataFrame
-            st.dataframe(df.head())
+            st.dataframe(df_raw.head())
 
             # Adicionar botão para gerar relatório HTML
             if st.button("Gerar relatório"):
